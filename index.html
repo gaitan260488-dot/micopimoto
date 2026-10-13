@@ -492,6 +492,29 @@ small.mcNota { color:#94a3b8; font-size:12px; }
   <p style="margin-top:14px;"><small class="mcNota">También puedes escribir en el chat del Modo Visual.</small></p>
 </div>
 
+
+<section id="mcMejoras" style="max-width:460px;margin:12px auto;padding:16px;background:#fff;border-radius:16px;color:#0f172a">
+<h2 style="font-size:18px">🧭 Control de rutas y registros</h2>
+<p id="mcGpsEstado" role="status">GPS apagado. Funciona con permiso de ubicación y la página abierta.</p>
+<div style="display:flex;gap:8px;flex-wrap:wrap"><button id="mcGpsIniciar">▶ Activar GPS</button><button id="mcGpsParar">■ Detener GPS</button></div>
+<p style="font-size:12px;color:#64748b">Solo registra puntos con precisión razonable; no garantiza rastreo en segundo plano en iPhone. No utilices controles mientras conduces.</p>
+<h3>🚘 Mis vehículos (máximo 5)</h3>
+<select id="mcVehiculosGuardados" aria-label="Vehículo activo" style="width:100%;padding:10px"></select>
+<div style="display:flex;gap:8px;margin:10px 0"><button id="mcGuardarPerfil">Guardar vehículo actual</button><button id="mcBorrarPerfil">Quitar vehículo</button></div>
+<h3>📱 Mis aplicaciones</h3>
+<div style="display:flex;gap:8px"><input id="mcNuevaApp" placeholder="Nombre de la aplicación" style="min-width:0;flex:1;padding:10px"><button id="mcAgregarApp">Agregar</button></div>
+<div id="mcAppsUsuario" style="margin:8px 0"></div>
+<h3>💵 Ganancias por aplicación</h3>
+<div style="display:flex;gap:8px"><input id="mcIngresoApp" type="number" min="0" step="0.01" placeholder="Monto $" style="width:45%;padding:10px"><button id="mcRegistrarIngreso">Registrar en app activa</button></div>
+<div id="mcResumenApps" style="margin:10px 0;font-size:13px"></div>
+<h3>📅 Historial y exportación</h3>
+<label>Año <input id="mcAnioReporte" type="number" min="2020" max="2100" style="width:90px;padding:8px"></label>
+<button id="mcExportar">Exportar CSV anual</button>
+<div id="mcResumenAnual" style="margin-top:10px;font-size:13px"></div>
+<p style="font-size:12px;color:#64748b">Los datos se guardan en este navegador. Exporta copias periódicamente; borrar datos del navegador puede eliminar el historial. El CSV es un registro de apoyo, no una declaración fiscal.</p>
+</section>
+<style>#mcMejoras button{border:0;border-radius:9px;background:#2563eb;color:white;padding:10px;cursor:pointer}#mcMejoras h3{font-size:15px;margin:18px 0 8px}</style>
+
 <p style="text-align:center;color:#64748b;font-size:12px;padding:10px;">Mi Copiloto © 2026</p>
 
 <script>
@@ -515,6 +538,7 @@ function cargarDatos() {
     const guardados = localStorage.getItem(CLAVE);
     if (guardados) {
       const datos = JSON.parse(guardados);
+      if (datos.fecha && datos.fecha !== fechaLocal()) { const a=JSON.parse(localStorage.getItem("mcArchivoDiarioV1")||"{}"); a[datos.fecha]=datos; localStorage.setItem("mcArchivoDiarioV1",JSON.stringify(a)); }
       if (datos.fecha === fechaLocal()) return datos;
     }
   } catch (error) { console.error("Error al cargar datos", error); }
@@ -524,7 +548,7 @@ function cargarDatos() {
 let datos = cargarDatos();
 
 function guardar() {
-  try { localStorage.setItem(CLAVE, JSON.stringify(datos)); }
+  try { localStorage.setItem(CLAVE, JSON.stringify(datos)); if (datos.fecha) { const a=JSON.parse(localStorage.getItem("mcArchivoDiarioV1")||"{}"); a[datos.fecha]=datos; localStorage.setItem("mcArchivoDiarioV1",JSON.stringify(a)); } }
   catch (error) { alert("No se pudieron guardar los datos."); }
 }
 
@@ -1118,6 +1142,42 @@ $("mcAtajoReportes").onclick = () => {
 /* ===================== INICIO ===================== */
 guardar();
 actualizar();
+
+/* ===================== EXTENSION 2026: HISTORIAL, GPS Y PERFILES ===================== */
+(function(){
+const el=id=>document.getElementById(id);
+const get=(k,f)=>{try{return JSON.parse(localStorage.getItem(k))??f}catch(e){return f}};
+const set=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+const archive=()=>{let a=get('mcArchivoDiarioV1',{});a[datos.fecha]=JSON.parse(JSON.stringify(datos));set('mcArchivoDiarioV1',a)};
+const baseGuardar=guardar;
+guardar=function(){baseGuardar();archive();renderReport()};
+const originalNuevoDia=nuevoDia;
+nuevoDia=function(){archive();originalNuevoDia();renderReport()};
+const originalCargar=cargarDatos;
+// Rescatar un día anterior almacenado antes de empezar uno nuevo.
+try{const old=get(CLAVE,null);if(old&&old.fecha&&old.fecha!==fechaLocal()){let a=get('mcArchivoDiarioV1',{});if(!a[old.fecha]){a[old.fecha]=old;set('mcArchivoDiarioV1',a)}}}catch(e){}
+let apps=get('mcAppsPersonalizadasV1',[]), perfiles=get('mcVehiculosV1',[]), activo=get('mcVehiculoActivoV1',null);
+let ingresos=get('mcIngresosPorAppV1',[]);
+function renderApps(){const box=el('mcAppsUsuario');box.replaceChildren();apps.forEach(n=>{const row=document.createElement('div');row.style.margin='6px 0';const b=document.createElement('button');b.textContent='Usar '+n;b.onclick=()=>{plataformaActiva=n;localStorage.setItem(PLATAFORMA_CLAVE,n);marcarPlataforma();pintarEstadoJornada();renderIngresos()};const x=document.createElement('button');x.textContent='Quitar';x.style.marginLeft='8px';x.onclick=()=>{if(!confirm('¿Quitar esta aplicación del selector? Sus ingresos históricos se conservan.'))return;apps=apps.filter(a=>a!==n);set('mcAppsPersonalizadasV1',apps);if(plataformaActiva===n){plataformaActiva=null;localStorage.removeItem(PLATAFORMA_CLAVE)}renderApps()};row.append(b,x);box.append(row)});marcarPlataforma()}
+const marcarAnterior=marcarPlataforma;
+marcarPlataforma=function(){marcarAnterior();document.querySelectorAll('[data-app-custom]').forEach(b=>b.classList.toggle('activo',b.dataset.appCustom===plataformaActiva))};
+el('mcAgregarApp').onclick=()=>{const n=el('mcNuevaApp').value.trim();if(!n)return;if([...PLATAFORMAS.map(x=>x[0]),...apps].some(x=>x.toLowerCase()===n.toLowerCase()))return alert('La aplicación ya existe.');apps.push(n);set('mcAppsPersonalizadasV1',apps);el('mcNuevaApp').value='';renderApps()};
+function renderPerfiles(){const sel=el('mcVehiculosGuardados');sel.replaceChildren();const empty=document.createElement('option');empty.value='';empty.textContent='Seleccionar vehículo';sel.append(empty);perfiles.forEach(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.nombre;sel.append(o)});sel.value=activo||''}
+el('mcGuardarPerfil').onclick=()=>{const nombre=[el('mcMarca').value,el('mcModelo').value,el('mcAnio').value].filter(Boolean).join(' ')||el('mcVehiculo').value.trim();if(!nombre)return alert('Indica marca, modelo y año.');const v={id:activo||('v'+Date.now()),nombre,marca:el('mcMarca').value,modelo:el('mcModelo').value,anio:el('mcAnio').value,vehiculo:el('mcVehiculo').value,mpg:el('mcMpg').value,precio:el('mcPrecio').value};if(!activo&&perfiles.length>=5)return alert('Puedes guardar un máximo de cinco vehículos.');perfiles=perfiles.filter(x=>x.id!==v.id);perfiles.push(v);activo=v.id;set('mcVehiculosV1',perfiles);set('mcVehiculoActivoV1',activo);el('mcGuardarConfig').click();renderPerfiles()};
+el('mcVehiculosGuardados').onchange=e=>{activo=e.target.value;set('mcVehiculoActivoV1',activo);const p=perfiles.find(x=>x.id===activo);if(!p)return;[['mcMarca','marca'],['mcModelo','modelo'],['mcAnio','anio'],['mcVehiculo','vehiculo'],['mcMpg','mpg'],['mcPrecio','precio']].forEach(([id,k])=>el(id).value=p[k]||'');el('mcGuardarConfig').click()};
+el('mcBorrarPerfil').onclick=()=>{if(!activo)return;if(!confirm('¿Quitar el vehículo guardado? Los registros anteriores se conservan.'))return;perfiles=perfiles.filter(x=>x.id!==activo);activo=null;set('mcVehiculosV1',perfiles);set('mcVehiculoActivoV1',null);renderPerfiles()};
+el('mcRegistrarIngreso').onclick=()=>{const monto=Number(el('mcIngresoApp').value);if(!plataformaActiva)return alert('Selecciona primero una aplicación.');if(!Number.isFinite(monto)||monto<=0)return alert('Escribe un monto positivo.');ingresos.push({fecha:fechaLocal(),app:plataformaActiva,monto,vehiculo:activo});set('mcIngresosPorAppV1',ingresos);registrarGananciasCantidad(monto);el('mcIngresoApp').value='';renderIngresos()};
+function renderIngresos(){const sums={};ingresos.filter(x=>x.fecha===fechaLocal()).forEach(x=>sums[x.app]=(sums[x.app]||0)+x.monto);el('mcResumenApps').textContent=Object.entries(sums).map(([k,v])=>k+': $'+v.toFixed(2)).join(' · ')||'Sin ingresos asignados hoy.'}
+let gps=null,ultima=null,ultimaHora=0;
+const rad=x=>x*Math.PI/180;
+function distancia(a,b){const dlat=rad(b.latitude-a.latitude),dlon=rad(b.longitude-a.longitude),z=Math.sin(dlat/2)**2+Math.cos(rad(a.latitude))*Math.cos(rad(b.latitude))*Math.sin(dlon/2)**2;return 3958.7613*2*Math.atan2(Math.sqrt(z),Math.sqrt(1-z))}
+el('mcGpsIniciar').onclick=()=>{if(!navigator.geolocation)return el('mcGpsEstado').textContent='GPS no disponible.';if(gps!==null)return;ultima=null;ultimaHora=0;gps=navigator.geolocation.watchPosition(p=>{const c=p.coords,t=p.timestamp;if(c.accuracy>80){el('mcGpsEstado').textContent='Esperando señal GPS más precisa…';return}if(ultima){const mi=distancia(ultima,c),seg=(t-ultimaHora)/1000;if(mi>=0.012&&seg>0&&mi/seg*3600<110){registrarMillasCantidad(mi)}}ultima={latitude:c.latitude,longitude:c.longitude};ultimaHora=t;el('mcGpsEstado').textContent='GPS activo · precisión ±'+Math.round(c.accuracy)+' m · '+datos.millas.toFixed(2)+' mi hoy';},e=>{el('mcGpsEstado').textContent='Error GPS: '+e.message+' (revisa permisos y HTTPS).';if(gps!==null){navigator.geolocation.clearWatch(gps);gps=null}},{enableHighAccuracy:true,maximumAge:0,timeout:20000})};
+el('mcGpsParar').onclick=()=>{if(gps!==null)navigator.geolocation.clearWatch(gps);gps=null;ultima=null;el('mcGpsEstado').textContent='GPS detenido.'};
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&gps!==null)el('mcGpsEstado').textContent='Página en segundo plano: el GPS podría pausarse.'});
+function renderReport(){const year=String(el('mcAnioReporte').value||new Date().getFullYear());const a=get('mcArchivoDiarioV1',{});a[datos.fecha]=datos;const days=Object.entries(a).filter(([d])=>d.startsWith(year+'-'));const sum=k=>days.reduce((v,[,d])=>v+(Number(d[k])||0),0);el('mcResumenAnual').textContent=year+': '+days.length+' días · '+sum('millas').toFixed(1)+' millas · $'+sum('ganancias').toFixed(2)+' ganancias · $'+sum('gastos').toFixed(2)+' combustible registrado. Los gastos estimados no se incluyen como gastos reales.'}
+el('mcExportar').onclick=()=>{archive();const year=String(el('mcAnioReporte').value);const a=get('mcArchivoDiarioV1',{});const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const rows=[['Fecha','Millas','Ganancias','Combustible real registrado','Ganancias por aplicación']];Object.entries(a).filter(([d])=>d.startsWith(year+'-')).sort().forEach(([fecha,d])=>{const appsDay=ingresos.filter(x=>x.fecha===fecha).map(x=>x.app+': $'+x.monto.toFixed(2)).join('; ');rows.push([fecha,d.millas||0,d.ganancias||0,d.gastos||0,appsDay])});const csv='\uFEFF'+rows.map(r=>r.map(q).join(',')).join('\r\n');const blob=new Blob([csv.replace('\uFEFF','﻿')],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob),aLink=document.createElement('a');aLink.href=url;aLink.download='Mi_Copiloto_'+year+'.csv';aLink.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+el('mcAnioReporte').value=new Date().getFullYear();renderPerfiles();renderApps();renderIngresos();renderReport();
+})();
 </script>
 
 </body>
